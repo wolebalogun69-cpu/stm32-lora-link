@@ -112,3 +112,40 @@ Next engineering step:
 - Keep ACK-first behavior on Node 2.
 - Add duplicate sequence handling on Node 2 so retries caused by lost ACKs do not process the same payload twice.
 - Then begin reducing `CHUNK_DELAY_MS` gradually while measuring reliability.
+
+## 2026-06-23
+
+### V7.0 Reliable Baseline Prepared
+
+V7.0 was prepared as a clean reliability checkpoint after V6.9 confirmed the full round trip.
+
+V7.0 keeps:
+
+- Existing data frame format: `A5 5A SEQ_L SEQ_H LEN_L LEN_H PAYLOAD CHECKSUM_L CHECKSUM_H`
+- Existing ACK format: `B6 6B SEQ_L SEQ_H`
+- Node 1 retry behavior with `MAX_RETRIES = 3`
+- Conservative 2-byte chunking with `CHUNK_DELAY_MS = 500`
+- ACK-first behavior on Node 2
+
+V7.0 changes:
+
+- Removes raw `RX:xx` diagnostic ACK byte printing from Node 1.
+- Adds duplicate sequence handling on Node 2.
+- If Node 2 receives the same sequence again, it resends ACK but does not process the payload as a new message.
+
+Prepared outputs:
+
+- `NODE1_V7_0_RELIABLE_TX_ACK_RETRY_main.c`
+- `NODE2_V7_0_DATA_RX_ACK_FIRST_DUPLICATE_SAFE_main.c`
+- `V7_0_TEST_PLAN.md`
+
+### Node 2 Clock Config Added
+
+The STM32L073 `SystemClock_Config()` was added to the Node 2 V7.0 drop-in:
+
+- MSI oscillator enabled
+- MSI range 5
+- PLL disabled
+- HCLK, PCLK1, and PCLK2 not divided
+- Flash latency 0
+- Voltage scaling set to `PWR_REGULATOR_VOLTAGE_SCALE1`
