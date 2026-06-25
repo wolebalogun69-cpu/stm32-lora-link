@@ -15,7 +15,7 @@ The engineering path is:
 5. Audio packet transport
 6. Audio playback on Node 2 DAC
 
-Current focus: improve UART RX robustness after 250 ms timing reduction failed reliability validation.
+Current focus: first stored audio clip transfer over LoRa, then playback on Node 2 DAC.
 
 ## Hardware
 
@@ -149,6 +149,8 @@ ACK sequence is 16-bit little-endian.
 | ACK frame structure | Defined | `B6 6B SEQ_L SEQ_H` |
 | V7.0 reliable ACK/retry baseline | Working | Full round trip confirmed on both nodes |
 | 250 ms chunk delay timing test | Failed | Could barely reach 10 packets without checksum failure |
+| V8.0 interrupt RX ring buffer | Improved | About 60 cycles with one bad length and one checksum fail, then recovered |
+| Node 2 DAC tone playback | Working | Local TIM2-driven DAC tone is audible |
 
 ## Known Failed Tests
 
@@ -157,11 +159,13 @@ ACK sequence is 16-bit little-endian.
 | Large UART bursts unreliable | Data loss, corruption, or missed decode | Blocking polling receive, UART overrun, LoRa module serial-buffer limits, parser timing | High |
 | Large UART bursts unreliable | Still not validated after V7.0 | Requires timing reduction tests, then interrupt/DMA RX before audio | High |
 | 250 ms chunk delay unreliable | Node 2 checksum failures after a small number of packets | Forward data path cannot yet tolerate faster pacing | High |
+| Occasional V8.0 parser errors | One bad length and one checksum fail seen in about 60 cycles | Needs V8.1 receiver hardening before audio | High |
 | Audio packet transfer not ready | Not started safely | Packet and ACK reliability must be solved first | High |
+| Passive dynamic speaker drive | DAC pin cannot directly power speaker reliably | Use amplifier/driver between PA4 and speaker |
 
 ## Current Objective
 
-Improve receive robustness while preserving the V7.0 known-good reliability baseline.
+Send a small generated audio clip over LoRa, store it on Node 2, then play it through DAC_OUT1 PA4.
 
 Immediate success criteria:
 
@@ -194,6 +198,11 @@ Immediate success criteria:
 | 2026-06-23 | Move next to interrupt or DMA RX | Faster pacing likely requires continuous UART receive buffering |
 | 2026-06-25 | Correct Node 2 USART2 pins to PD5/PD6 | Provided CubeMX USART2 MSP config shows PD5/PD6 |
 | 2026-06-25 | Prepare Node 2 V8.0 interrupt RX ring buffer | USART2 IRQ setup and handler are confirmed |
+| 2026-06-25 | Treat V8.0 as improved but not final | It recovers from occasional errors but is not yet clean enough for audio |
+| 2026-06-25 | Prepare V8.1 diagnostic hardening | Larger ring, parser timeout, and counters will classify remaining errors |
+| 2026-06-25 | Do not target live audio | Project target is clip transfer, store, then playback |
+| 2026-06-25 | Prove DAC playback before LoRa audio | Separates audio output validation from radio transfer issues |
+| 2026-06-25 | DAC tone test passed | Node 2 DAC/TIM2 playback path is confirmed audible |
 
 ## Future Roadmap
 

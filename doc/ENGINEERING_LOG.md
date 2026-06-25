@@ -137,3 +137,121 @@ Prepared Node 2 V8.0 receiver architecture:
 - RX ring overflow is counted and reported.
 
 Node 1 remains unchanged on V7.0 for the first V8.0 test.
+
+### V8.0 Runtime Observation
+
+V8.0 is a major improvement over blocking polling RX.
+
+Observed during a roughly 60-cycle run:
+
+- System continued operating and recovered after errors.
+- One `BAD LENGTH` occurred after about 20 cycles.
+- One `CHECKSUM FAIL` occurred during the run.
+- The system corrected itself and moved on instead of locking up.
+
+Interpretation:
+
+- Ring-buffer interrupt RX is working and improves robustness.
+- Parser resynchronization is working.
+- Retry/ACK architecture can recover from occasional invalid frames.
+- Reliability is not yet clean enough for audio transport.
+
+Next hardening direction:
+
+- Add better receiver diagnostics counters.
+- Increase RX ring buffer size.
+- Add frame timeout/reset protection while parsing partial frames.
+- Consider DMA circular RX if byte interrupt RX still produces occasional corrupt frames.
+
+### V8.1 Node 2 Diagnostic Hardening Prepared
+
+V8.1 was prepared to classify the remaining V8.0 errors.
+
+Changes:
+
+- RX ring buffer increased from 128 bytes to 256 bytes.
+- Parser timeout added with `PARSER_TIMEOUT_MS = 3000`.
+- Periodic diagnostics report added every 10 seconds.
+- Counters added for frames OK, checksum failures, bad lengths, duplicates, parser timeouts, ring overflows, and UART errors.
+
+Protocol behavior is unchanged.
+
+Node 1 remains unchanged on the V7.0 sender/retry baseline for the first V8.1 test.
+
+## 2026-06-25
+
+### Audio Goal Clarified
+
+The project is not targeting live audio.
+
+Target behavior:
+
+- Send a small audio clip over LoRa.
+- Store the clip on Node 2.
+- Play it after transfer through Node 2 DAC.
+
+### Node 2 DAC/TIM2 Setup Reviewed
+
+Provided DAC setup confirms:
+
+- `PA4 -> DAC_OUT1`
+- DAC channel 1 enabled
+- DAC output buffer enabled
+- DAC trigger is none
+
+Provided TIM2 setup confirms:
+
+- TIM2 base interrupt is enabled.
+- Prescaler is 0.
+- Period is 261.
+- `TIM2_IRQHandler()` is already present in the interrupt file.
+
+### DAC Tone Test Prepared
+
+Prepared a local Node 2 DAC tone test before LoRa audio transfer.
+
+Output:
+
+- `NODE2_AUDIO_DAC_TONE_TEST_main.c`
+- `AUDIO_DAC_TONE_TEST_PLAN.md`
+
+Engineering note:
+
+- A passive dynamic speaker should be driven through an amplifier/driver, not directly from PA4.
+
+### DAC Tone Test Passed
+
+Node 2 local DAC tone playback test succeeded.
+
+Confirmed:
+
+- DAC channel 1 works on PA4.
+- TIM2 interrupt-driven sample output works.
+- The audio output chain produces audible sound.
+
+This clears the way for the first stored audio clip transfer demo.
+
+Next objective:
+
+- Send a small generated 8-bit PCM clip over LoRa.
+- Store it on Node 2.
+- Play it through the proven DAC/TIM2 output path after transfer completes.
+
+### Audio Clip Transfer V1 Prepared
+
+Prepared the first stored audio clip transfer demo.
+
+Design:
+
+- Preserve existing frame wrapper and ACK.
+- Add typed payloads for audio start, data, and end.
+- Send a 256-byte generated unsigned 8-bit PCM tone clip.
+- Node 2 stores the clip in RAM.
+- Node 2 validates the clip checksum at end.
+- Node 2 plays the stored clip through the already-proven TIM2/DAC output path.
+
+Prepared outputs:
+
+- `NODE1_AUDIO_CLIP_TX_V1_main.c`
+- `NODE2_AUDIO_CLIP_RX_PLAYBACK_V1_main.c`
+- `AUDIO_CLIP_TRANSFER_V1_TEST_PLAN.md`
