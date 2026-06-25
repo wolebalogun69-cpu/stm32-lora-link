@@ -15,7 +15,7 @@ The engineering path is:
 5. Audio packet transport
 6. Audio playback on Node 2 DAC
 
-Current focus: reliable ACK sequence decode, then retry logic, then audio packet transfer.
+Current focus: improve UART RX robustness after 250 ms timing reduction failed reliability validation.
 
 ## Hardware
 
@@ -49,8 +49,8 @@ Current focus: reliable ACK sequence decode, then retry logic, then audio packet
 
 | Signal | STM32 Pin | Peripheral | Connected To | Notes |
 |---|---|---|---|---|
-| LoRa TX from MCU | PA2 | USART2_TX | LoRa RX | Active LoRa UART |
-| LoRa RX into MCU | PA3 | USART2_RX | LoRa TX | Active LoRa UART |
+| LoRa TX from MCU | PD5 | USART2_TX | LoRa RX | Active LoRa UART |
+| LoRa RX into MCU | PD6 | USART2_RX | LoRa TX | Active LoRa UART |
 | Alternate TX | PA9 | USART1_TX | Unknown | Not active for LoRa |
 | Alternate RX | PA10 | USART1_RX | Unknown | Not active for LoRa |
 | Audio DAC | PA4 | DAC_OUT1 | Audio output stage | Future stage |
@@ -70,8 +70,8 @@ Current focus: reliable ACK sequence decode, then retry logic, then audio packet
 ### Node 2 UART
 
 - Active peripheral: USART2
-- TX pin: PA2
-- RX pin: PA3
+- TX pin: PD5
+- RX pin: PD6
 - Baud rate: 115200
 - Format: 8N1
 - RX method: blocking polling receive
@@ -95,7 +95,7 @@ Current focus: reliable ACK sequence decode, then retry logic, then audio packet
 
 Both nodes currently use blocking polling UART receive. There is no interrupt-driven RX, DMA RX, or continuous ring buffer yet.
 
-Node 1 sends a data frame in paced 2-byte chunks. Node 2 sends an ACK frame in paced 2-byte chunks.
+Node 1 sends a data frame in paced 2-byte chunks. Node 2 validates the frame, sends ACK immediately after checksum success, and handles duplicate sequence numbers by resending ACK without processing the payload as a new message.
 
 Current chunking constants:
 
@@ -103,7 +103,7 @@ Current chunking constants:
 #define CHUNK_SIZE_BYTES      2U
 #define CHUNK_DELAY_MS        500U
 #define ACK_TIMEOUT_MS        12000U
-#define MAX_RETRIES           /* not implemented yet */
+#define MAX_RETRIES           3U
 ```
 
 ## Packet Protocol
@@ -147,27 +147,29 @@ ACK sequence is 16-bit little-endian.
 | Transparent UART mode | Working | TRNS mode is active |
 | 2-byte chunks with delay | Reliable | Current stable baseline |
 | ACK frame structure | Defined | `B6 6B SEQ_L SEQ_H` |
+| V7.0 reliable ACK/retry baseline | Working | Full round trip confirmed on both nodes |
+| 250 ms chunk delay timing test | Failed | Could barely reach 10 packets without checksum failure |
 
 ## Known Failed Tests
 
 | Failure | Observed Behavior | Suspected Cause | Priority |
 |---|---|---|---|
 | Large UART bursts unreliable | Data loss, corruption, or missed decode | Blocking polling receive, UART overrun, LoRa module serial-buffer limits, parser timing | High |
-| ACK sequence decode not reliable enough yet | Retry layer blocked | ACK parser depends on polling timing and byte availability | High |
+| Large UART bursts unreliable | Still not validated after V7.0 | Requires timing reduction tests, then interrupt/DMA RX before audio | High |
+| 250 ms chunk delay unreliable | Node 2 checksum failures after a small number of packets | Forward data path cannot yet tolerate faster pacing | High |
 | Audio packet transfer not ready | Not started safely | Packet and ACK reliability must be solved first | High |
 
 ## Current Objective
 
-Make ACK sequence decode reliable while preserving the known-working 2-byte paced transmission path.
+Improve receive robustness while preserving the V7.0 known-good reliability baseline.
 
 Immediate success criteria:
 
-- Node 1 sends a framed data packet with sequence number.
-- Node 2 decodes the packet and checksum.
-- Node 2 replies with `B6 6B SEQ_L SEQ_H`.
-- Node 1 reliably detects matching ACK sequence.
-- Mismatched or malformed ACK bytes do not falsely pass.
-- Retry logic can be added on top without changing the wire format.
+- Node 1 continues to send framed data packets with sequence numbers.
+- Node 2 continues to validate checksum and ACK immediately.
+- Node 1 continues to advance sequence only after matching ACK.
+- Duplicate sequence handling continues to prevent repeated payload processing.
+- Timing reduction is paused until the UART receive path is more robust.
 
 ## Open Issues
 
@@ -175,7 +177,7 @@ Immediate success criteria:
 |---|---|---|
 | Blocking polling RX | Can miss bytes during bursts and does not scale to audio | Keep current method for baseline, then migrate to interrupt or DMA RX |
 | Very large chunk delay | Reliable but slow | Preserve while debugging; later tune down after parser is stable |
-| No implemented retry count | Sender can only fail or pass once | Add bounded `MAX_RETRIES` after ACK parser is stable |
+| Timing still conservative | `500 ms` chunk delay is reliable but slow | Reduce in measured steps |
 | No RX ring buffer | Parser only sees bytes when actively receiving | Add ring buffer before audio transport |
 | Unknown checksum implementation details | Need to verify sender/receiver match | Review `calc_data_checksum()` and receiver validation next |
 
@@ -186,6 +188,12 @@ Immediate success criteria:
 | 2026-06-19 | Preserve 2-byte chunking with delay as known-good baseline | It is currently reliable and useful for isolating parser/ACK issues |
 | 2026-06-19 | Treat ACK as `B6 6B SEQ_L SEQ_H` | Simple, low-overhead, and sequence-specific |
 | 2026-06-19 | Do not start audio transport until ACK/retry is reliable | Audio will amplify packet-loss and buffering problems |
+| 2026-06-23 | V7.0 is the known-good ACK/retry baseline | Full data plus ACK round trip passed on both nodes |
+| 2026-06-23 | Keep protocol stable during timing reduction | Isolates timing reliability from protocol changes |
+| 2026-06-23 | Do not promote 250 ms chunk delay | It fails within roughly 5-10 packets with checksum errors |
+| 2026-06-23 | Move next to interrupt or DMA RX | Faster pacing likely requires continuous UART receive buffering |
+| 2026-06-25 | Correct Node 2 USART2 pins to PD5/PD6 | Provided CubeMX USART2 MSP config shows PD5/PD6 |
+| 2026-06-25 | Prepare Node 2 V8.0 interrupt RX ring buffer | USART2 IRQ setup and handler are confirmed |
 
 ## Future Roadmap
 
@@ -228,4 +236,3 @@ Immediate success criteria:
 - Use timer-triggered playback
 - Add circular audio buffer
 - Handle underrun and late packet behavior
-

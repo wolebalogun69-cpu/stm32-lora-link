@@ -55,3 +55,85 @@ Review Node 2 data-frame receive/decode code, especially:
 - Checksum validation
 - ACK send timing
 
+## 2026-06-23
+
+### V7.0 Reliable Baseline Passed
+
+V7.0 was tested successfully on both STM32 nodes.
+
+Confirmed behavior:
+
+- Node 1 transmits framed payloads.
+- Node 1 waits for a matching ACK sequence.
+- Node 1 retry logic is present with `MAX_RETRIES = 3`.
+- Node 1 advances sequence only after `ACK OK`.
+- Node 2 validates data-frame checksum.
+- Node 2 sends ACK immediately after checksum success.
+- Node 2 duplicate sequence handling is present so repeated frames can be ACKed again without being processed as new messages.
+
+V7.0 is now the current known-good reliability baseline.
+
+### Current Engineering Decision
+
+Keep the V7.0 frame format, ACK format, retry count, and duplicate handling unchanged while performing timing reduction tests.
+
+Next objective:
+
+- Reduce `CHUNK_DELAY_MS` in controlled steps.
+- Record the fastest reliable chunk delay.
+- Do not begin audio packet transport until the selected timing is reliable over repeated packet tests.
+
+### V7.1 Timing Reduction Result
+
+`CHUNK_DELAY_MS = 250` was tested and failed reliability validation.
+
+Observed result:
+
+- Could barely reach 10 packets without checksum failure.
+- Stable operation was only around 5 packets at most.
+
+Conclusion:
+
+- 250 ms is not a reliable baseline.
+- The failure mode is checksum failure on Node 2, which means the forward data frame is being corrupted, truncated, or misaligned before ACK handling matters.
+- The project should revert to the last known reliable timing and avoid further speed tuning until UART receive robustness is improved.
+
+Decision:
+
+- Keep V7.0 as the known-good reliability baseline.
+- Do not promote 250 ms to a baseline.
+- Next engineering focus should be UART RX robustness: interrupt-driven receive or DMA/ring-buffer receive.
+
+## 2026-06-25
+
+### Node 2 USART2 Interrupt Plumbing Confirmed
+
+Node 2 USART2 initialization was reviewed.
+
+Confirmed:
+
+- USART2 is configured at 115200 baud, 8N1.
+- USART2 mode is TX/RX.
+- USART2 hardware flow control is disabled.
+- USART2 interrupt is enabled through NVIC.
+- `USART2_IRQHandler()` calls `HAL_UART_IRQHandler(&huart2)`.
+
+The provided CubeMX pin mapping shows Node 2 USART2 on:
+
+- `PD5 -> USART2_TX`
+- `PD6 -> USART2_RX`
+
+This corrects the earlier project assumption that Node 2 USART2 used `PA2/PA3`.
+
+### V8.0 Node 2 IRQ Ring RX Prepared
+
+Prepared Node 2 V8.0 receiver architecture:
+
+- USART2 interrupt receives one byte at a time.
+- RX callback pushes bytes into a 128-byte ring buffer.
+- Main loop parses frames from the ring buffer.
+- ACK-first behavior is preserved.
+- Duplicate sequence handling is preserved.
+- RX ring overflow is counted and reported.
+
+Node 1 remains unchanged on V7.0 for the first V8.0 test.
