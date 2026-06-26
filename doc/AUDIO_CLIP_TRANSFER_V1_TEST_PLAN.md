@@ -43,9 +43,9 @@ SEQ_L SEQ_H
 Audio payload types:
 
 ```text
-0x30 AUDIO_START: type, clip_len_l, clip_len_h, sample_rate_l, sample_rate_h
+0x30 AUDIO_START: type, clip_len_l, clip_len_h, sample_rate_l, sample_rate_h, reserved
 0x31 AUDIO_DATA:  type, offset_l, offset_h, count, sample_bytes...
-0x32 AUDIO_END:   type, clip_len_l, clip_len_h, checksum_l, checksum_h
+0x32 AUDIO_END:   type, clip_len_l, clip_len_h, checksum_l, checksum_h, reserved
 ```
 
 ## Expected Node 1 Output
@@ -91,4 +91,3 @@ Then the speaker should play the received tone.
 Transfer is intentionally slow because `CHUNK_DELAY_MS` remains conservative at 500 ms.
 
 This test proves stored clip transfer and playback before any optimization.
-

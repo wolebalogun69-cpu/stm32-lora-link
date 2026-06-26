@@ -255,3 +255,132 @@ Prepared outputs:
 - `NODE1_AUDIO_CLIP_TX_V1_main.c`
 - `NODE2_AUDIO_CLIP_RX_PLAYBACK_V1_main.c`
 - `AUDIO_CLIP_TRANSFER_V1_TEST_PLAN.md`
+
+### Audio Clip V1 Bad Length Fix
+
+The first audio transfer test produced `BAD LENGTH`.
+
+Root cause:
+
+- The transport sends in 2-byte chunks.
+- `AUDIO_START` and `AUDIO_END` payloads were 5 bytes.
+- The sender padded the last pair with an extra zero byte, but the frame length still said 5.
+- This shifted checksum bytes and caused parser misalignment.
+
+Fix:
+
+- `AUDIO_START` changed to 6 bytes by adding a reserved byte.
+- `AUDIO_END` changed to 6 bytes by adding a reserved byte.
+- `AUDIO_DATA` remains 24 bytes and was already even length.
+
+### Audio V2 Blocking Receiver Prepared
+
+Audio V1 still produced `BAD LENGTH - RESYNC`.
+
+Engineering decision:
+
+- Revert Node 2 audio receive path to the known-good blocking polling parser style.
+- Keep the DAC/TIM2 playback path.
+- Keep the fixed even-length audio payload protocol.
+- Keep Node 1 audio sender unchanged.
+
+Reason:
+
+- The project target is stored audio clips, not live audio.
+- Reliable first playback is more important than receive-speed optimization.
+- The interrupt/ring-buffer receiver was useful for investigation but still produced occasional parser misalignment.
+
+Prepared output:
+
+- `NODE2_AUDIO_CLIP_RX_PLAYBACK_V2_BLOCKING_BASELINE_main.c`
+
+### Audio V3 Timer-Off-During-RX Prepared
+
+Audio V2 still failed with `BAD LENGTH - RESYNC`.
+
+Likely contributor:
+
+- TIM2 DAC playback interrupt was running from boot, even while receiving LoRa audio packets.
+- This added frequent interrupt load during blocking UART receive.
+
+Decision:
+
+- Keep TIM2 stopped during LoRa transfer.
+- Start TIM2 only after the full audio clip validates.
+- Stop TIM2 after playback completes.
+
+Prepared output:
+
+- `NODE2_AUDIO_CLIP_RX_PLAYBACK_V3_TIMER_OFF_DURING_RX_main.c`
+
+### Audio V4 ACK-First Receiver Prepared
+
+Audio V3 removed `BAD LENGTH`, but Node 1 still reported:
+
+- `ACK TIMEOUT`
+- `AUDIO CLIP TRANSFER FAILED`
+
+Interpretation:
+
+- Frame alignment is fixed.
+- ACK timing is now the main failure.
+
+Decision:
+
+- Send ACK immediately after frame checksum passes.
+- Process/store audio payload after ACK.
+- Keep TIM2 stopped during reception and start playback only after full clip validation.
+
+Prepared output:
+
+- `NODE2_AUDIO_CLIP_RX_PLAYBACK_V4_ACK_FIRST_main.c`
+
+### Audio V5 Frame Timeout Receiver Prepared
+
+Audio V4 showed checksum failures where the received checksum looked like it included the next frame header byte:
+
+- Example: `rx=42254`, which is `0xA50E`.
+
+Interpretation:
+
+- A byte was likely missed near the frame checksum.
+- The receiver stayed in a partial-frame state until the next retry began.
+- The next frame's `0xA5` header was consumed as checksum data.
+
+Decision:
+
+- Add partial-frame timeout reset.
+- If no byte arrives within `UART_BYTE_TIMEOUT_MS = 2000` while parsing a frame, reset to header search.
+- Keep ACK before debug output after payload acceptance.
+
+Prepared output:
+
+- `NODE2_AUDIO_CLIP_RX_PLAYBACK_V5_FRAME_TIMEOUT_CLEAN_ACK_main.c`
+
+### Audio V5 Stored Clip Transfer Passed
+
+Audio V5 completed the first successful stored audio transfer and playback.
+
+Confirmed:
+
+- Node 1 sends generated audio data in reliable packets.
+- Node 2 receives and stores 256 audio bytes.
+- Retry/resync recovers from damaged or incomplete frame attempts.
+- Node 2 validates the full clip.
+- Node 2 plays the stored audio through DAC/TIM2.
+
+Observed:
+
+- Several `FRAME TIMEOUT - RESYNC` events occurred during transfer.
+- Despite those events, all audio data offsets were eventually received.
+- Node 2 reached `AUDIO COMPLETE - PLAYING`.
+
+Current audio baseline:
+
+- Node 1: `NODE1_AUDIO_CLIP_TX_V1_main.c`
+- Node 2: `NODE2_AUDIO_CLIP_RX_PLAYBACK_V5_FRAME_TIMEOUT_CLEAN_ACK_main.c`
+
+Next objective:
+
+- Preserve V5 as the successful audio demo baseline.
+- Improve transfer cleanliness by reducing resync events and collecting retry statistics.

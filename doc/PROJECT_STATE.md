@@ -151,6 +151,13 @@ ACK sequence is 16-bit little-endian.
 | 250 ms chunk delay timing test | Failed | Could barely reach 10 packets without checksum failure |
 | V8.0 interrupt RX ring buffer | Improved | About 60 cycles with one bad length and one checksum fail, then recovered |
 | Node 2 DAC tone playback | Working | Local TIM2-driven DAC tone is audible |
+| Audio clip transfer V1 | Prepared | 256-byte generated tone clip, store then play |
+| Audio V1 bad length fix | Applied | START/END payloads changed from 5 to 6 bytes to preserve 2-byte chunk alignment |
+| Audio V2 blocking receiver | Prepared | Reverts audio RX to known-good blocking parser style for first playback demo |
+| Audio V3 timer-off receiver | Prepared | Keeps TIM2 stopped during LoRa transfer, starts playback timer only after full clip validates |
+| Audio V4 ACK-first receiver | Prepared | Sends ACK immediately after frame checksum before processing audio payload |
+| Audio V5 frame timeout receiver | Prepared | Resets parser if partial frame stalls before retry starts |
+| Audio V5 stored clip transfer | Working | 256-byte clip received, validated, and played after retry/resync recovery |
 
 ## Known Failed Tests
 
@@ -203,6 +210,13 @@ Immediate success criteria:
 | 2026-06-25 | Do not target live audio | Project target is clip transfer, store, then playback |
 | 2026-06-25 | Prove DAC playback before LoRa audio | Separates audio output validation from radio transfer issues |
 | 2026-06-25 | DAC tone test passed | Node 2 DAC/TIM2 playback path is confirmed audible |
+| 2026-06-25 | Prepare first stored audio transfer | Use typed payloads inside existing reliable frame/ACK wrapper |
+| 2026-06-25 | Keep transmitted frame payload lengths even | Current 2-byte chunk sender pads odd payloads, which can misalign checksum parsing |
+| 2026-06-26 | Use blocking RX for first stored-audio demo | Reliability matters more than speed because audio is stored then played, not live |
+| 2026-06-26 | Keep DAC timer off during audio reception | Stored audio does not need playback interrupts during LoRa transfer |
+| 2026-06-26 | ACK first after frame checksum for audio transfer | Audio V3 aligned frames but Node 1 still timed out waiting for ACK |
+| 2026-06-26 | Add partial-frame timeout for audio receiver | Prevents next retry header from being consumed as stale checksum/payload data |
+| 2026-06-26 | Promote Audio V5 to first audio demo baseline | Stored audio transfer and playback completed successfully |
 
 ## Future Roadmap
 
